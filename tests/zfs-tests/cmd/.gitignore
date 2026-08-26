@@ -66,3 +66,4 @@
 /setlease
 /file_unlink_fh
 /zcp_support
+/zfs_bookmark_destroy

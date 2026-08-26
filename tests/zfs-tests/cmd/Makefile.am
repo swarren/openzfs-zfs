@@ -95,6 +95,11 @@ scripts_zfs_tests_bin_PROGRAMS += %D%/zcp_support
 %C%_zcp_support_SOURCES = %D%/zcp_support.c
 %C%_zcp_support_SOURCES_DIST = %D%/zcp_support.c
 
+scripts_zfs_tests_bin_PROGRAMS += %D%/zfs_bookmark_destroy
+%C%_zfs_bookmark_destroy_LDADD = \
+	libzfs_core.la \
+	libnvpair.la
+
 scripts_zfs_tests_bin_PROGRAMS += %D%/nvlist_to_lua
 %C%_nvlist_to_lua_LDADD = \
 	libzfs_core.la \
