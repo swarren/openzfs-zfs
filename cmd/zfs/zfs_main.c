@@ -1771,183 +1771,185 @@ zfs_do_destroy(int argc, char **argv)
 		usage(B_FALSE);
 	}
 
-	at = strchr(argv[0], '@');
-	pound = strchr(argv[0], '#');
-	if (at != NULL) {
+	{
+		at = strchr(argv[0], '@');
+		pound = strchr(argv[0], '#');
+		if (at != NULL) {
 
-		/* Build the list of snaps to destroy in cb_nvl. */
-		cb.cb_nvl = fnvlist_alloc();
+			/* Build the list of snaps to destroy in cb_nvl. */
+			cb.cb_nvl = fnvlist_alloc();
 
-		*at = '\0';
-		zhp = zfs_open(g_zfs, argv[0],
-		    ZFS_TYPE_FILESYSTEM | ZFS_TYPE_VOLUME);
-		if (zhp == NULL) {
-			nvlist_free(cb.cb_nvl);
-			return (1);
-		}
-
-		cb.cb_snapspec = at + 1;
-		if (gather_snapshots(zfs_handle_dup(zhp), &cb) != 0 ||
-		    cb.cb_error) {
-			rv = 1;
-			goto out;
-		}
-
-		if (nvlist_empty(cb.cb_nvl)) {
-			(void) fprintf(stderr, gettext("could not find any "
-			    "snapshots to destroy; check snapshot names.\n"));
-			rv = 1;
-			goto out;
-		}
-
-		if (cb.cb_verbose) {
-			char buf[16];
-			zfs_nicebytes(cb.cb_snapused, buf, sizeof (buf));
-			if (cb.cb_parsable) {
-				(void) printf("reclaim\t%llu\n",
-				    (u_longlong_t)cb.cb_snapused);
-			} else if (cb.cb_dryrun) {
-				(void) printf(gettext("would reclaim %s\n"),
-				    buf);
-			} else {
-				(void) printf(gettext("will reclaim %s\n"),
-				    buf);
+			*at = '\0';
+			zhp = zfs_open(g_zfs, argv[0],
+				ZFS_TYPE_FILESYSTEM | ZFS_TYPE_VOLUME);
+			if (zhp == NULL) {
+				nvlist_free(cb.cb_nvl);
+				return (1);
 			}
-		}
 
-		if (!cb.cb_dryrun) {
-			if (cb.cb_doclones) {
-				cb.cb_batchedsnaps = fnvlist_alloc();
-				err = destroy_clones(&cb);
+			cb.cb_snapspec = at + 1;
+			if (gather_snapshots(zfs_handle_dup(zhp), &cb) != 0 ||
+				cb.cb_error) {
+				rv = 1;
+				goto out;
+			}
+
+			if (nvlist_empty(cb.cb_nvl)) {
+				(void) fprintf(stderr, gettext("could not find any "
+					"snapshots to destroy; check snapshot names.\n"));
+				rv = 1;
+				goto out;
+			}
+
+			if (cb.cb_verbose) {
+				char buf[16];
+				zfs_nicebytes(cb.cb_snapused, buf, sizeof (buf));
+				if (cb.cb_parsable) {
+					(void) printf("reclaim\t%llu\n",
+						(u_longlong_t)cb.cb_snapused);
+				} else if (cb.cb_dryrun) {
+					(void) printf(gettext("would reclaim %s\n"),
+						buf);
+				} else {
+					(void) printf(gettext("will reclaim %s\n"),
+						buf);
+				}
+			}
+
+			if (!cb.cb_dryrun) {
+				if (cb.cb_doclones) {
+					cb.cb_batchedsnaps = fnvlist_alloc();
+					err = destroy_clones(&cb);
+					if (err == 0) {
+						err = zfs_destroy_snaps_nvl(g_zfs,
+							cb.cb_batchedsnaps, B_FALSE);
+					}
+					if (err != 0) {
+						rv = 1;
+						goto out;
+					}
+				}
 				if (err == 0) {
-					err = zfs_destroy_snaps_nvl(g_zfs,
-					    cb.cb_batchedsnaps, B_FALSE);
-				}
-				if (err != 0) {
-					rv = 1;
-					goto out;
+					err = zfs_destroy_snaps_nvl(g_zfs, cb.cb_nvl,
+						cb.cb_defer_destroy);
 				}
 			}
+
+			if (err != 0)
+				rv = 1;
+		} else if (pound != NULL) {
+			int err;
+			nvlist_t *nvl;
+
+			if (cb.cb_dryrun) {
+				(void) fprintf(stderr,
+					"dryrun is not supported with bookmark\n");
+				return (-1);
+			}
+
+			if (cb.cb_defer_destroy) {
+				(void) fprintf(stderr,
+					"defer destroy is not supported with bookmark\n");
+				return (-1);
+			}
+
+			if (cb.cb_recurse) {
+				(void) fprintf(stderr,
+					"recursive is not supported with bookmark\n");
+				return (-1);
+			}
+
+			/*
+			* Unfortunately, zfs_bookmark() doesn't honor the
+			* casesensitivity setting.  However, we can't simply
+			* remove this check, because lzc_destroy_bookmarks()
+			* ignores non-existent bookmarks, so this is necessary
+			* to get a proper error message.
+			*/
+			if (!zfs_bookmark_exists(argv[0])) {
+				(void) fprintf(stderr, gettext("bookmark '%s' "
+					"does not exist.\n"), argv[0]);
+				return (1);
+			}
+
+			nvl = fnvlist_alloc();
+			fnvlist_add_boolean(nvl, argv[0]);
+
+			err = lzc_destroy_bookmarks(nvl, NULL);
+			if (err != 0) {
+				(void) zfs_standard_error(g_zfs, err,
+					"cannot destroy bookmark");
+			}
+
+			nvlist_free(nvl);
+
+			return (err);
+		} else {
+			/* Open the given dataset */
+			if ((zhp = zfs_open(g_zfs, argv[0], type)) == NULL)
+				return (1);
+
+			cb.cb_target = zhp;
+
+			/*
+			* Perform an explicit check for pools before going any further.
+			*/
+			if (!cb.cb_recurse && strchr(zfs_get_name(zhp), '/') == NULL &&
+				zfs_get_type(zhp) == ZFS_TYPE_FILESYSTEM) {
+				(void) fprintf(stderr, gettext("cannot destroy '%s': "
+					"operation does not apply to pools\n"),
+					zfs_get_name(zhp));
+				(void) fprintf(stderr, gettext("use 'zfs destroy -r "
+					"%s' to destroy all datasets in the pool\n"),
+					zfs_get_name(zhp));
+				(void) fprintf(stderr, gettext("use 'zpool destroy %s' "
+					"to destroy the pool itself\n"), zfs_get_name(zhp));
+				rv = 1;
+				goto out;
+			}
+
+			/*
+			* Check for any dependents and/or clones.
+			*/
+			cb.cb_first = B_TRUE;
+			if (!cb.cb_doclones && zfs_iter_dependents_v2(zhp, 0, B_TRUE,
+				destroy_check_dependent, &cb) != 0) {
+				rv = 1;
+				goto out;
+			}
+
+			if (cb.cb_error) {
+				rv = 1;
+				goto out;
+			}
+			cb.cb_batchedsnaps = fnvlist_alloc();
+			if (zfs_iter_dependents_v2(zhp, 0, B_FALSE, destroy_callback,
+				&cb) != 0) {
+				rv = 1;
+				goto out;
+			}
+
+			/*
+			* Do the real thing.  The callback will close the
+			* handle regardless of whether it succeeds or not.
+			*/
+			err = destroy_callback(zhp, &cb);
+			zhp = NULL;
 			if (err == 0) {
-				err = zfs_destroy_snaps_nvl(g_zfs, cb.cb_nvl,
-				    cb.cb_defer_destroy);
+				err = zfs_destroy_snaps_nvl(g_zfs,
+					cb.cb_batchedsnaps, cb.cb_defer_destroy);
 			}
+			if (err != 0 || cb.cb_error == B_TRUE)
+				rv = 1;
 		}
 
-		if (err != 0)
-			rv = 1;
-	} else if (pound != NULL) {
-		int err;
-		nvlist_t *nvl;
-
-		if (cb.cb_dryrun) {
-			(void) fprintf(stderr,
-			    "dryrun is not supported with bookmark\n");
-			return (-1);
-		}
-
-		if (cb.cb_defer_destroy) {
-			(void) fprintf(stderr,
-			    "defer destroy is not supported with bookmark\n");
-			return (-1);
-		}
-
-		if (cb.cb_recurse) {
-			(void) fprintf(stderr,
-			    "recursive is not supported with bookmark\n");
-			return (-1);
-		}
-
-		/*
-		 * Unfortunately, zfs_bookmark() doesn't honor the
-		 * casesensitivity setting.  However, we can't simply
-		 * remove this check, because lzc_destroy_bookmarks()
-		 * ignores non-existent bookmarks, so this is necessary
-		 * to get a proper error message.
-		 */
-		if (!zfs_bookmark_exists(argv[0])) {
-			(void) fprintf(stderr, gettext("bookmark '%s' "
-			    "does not exist.\n"), argv[0]);
-			return (1);
-		}
-
-		nvl = fnvlist_alloc();
-		fnvlist_add_boolean(nvl, argv[0]);
-
-		err = lzc_destroy_bookmarks(nvl, NULL);
-		if (err != 0) {
-			(void) zfs_standard_error(g_zfs, err,
-			    "cannot destroy bookmark");
-		}
-
-		nvlist_free(nvl);
-
-		return (err);
-	} else {
-		/* Open the given dataset */
-		if ((zhp = zfs_open(g_zfs, argv[0], type)) == NULL)
-			return (1);
-
-		cb.cb_target = zhp;
-
-		/*
-		 * Perform an explicit check for pools before going any further.
-		 */
-		if (!cb.cb_recurse && strchr(zfs_get_name(zhp), '/') == NULL &&
-		    zfs_get_type(zhp) == ZFS_TYPE_FILESYSTEM) {
-			(void) fprintf(stderr, gettext("cannot destroy '%s': "
-			    "operation does not apply to pools\n"),
-			    zfs_get_name(zhp));
-			(void) fprintf(stderr, gettext("use 'zfs destroy -r "
-			    "%s' to destroy all datasets in the pool\n"),
-			    zfs_get_name(zhp));
-			(void) fprintf(stderr, gettext("use 'zpool destroy %s' "
-			    "to destroy the pool itself\n"), zfs_get_name(zhp));
-			rv = 1;
-			goto out;
-		}
-
-		/*
-		 * Check for any dependents and/or clones.
-		 */
-		cb.cb_first = B_TRUE;
-		if (!cb.cb_doclones && zfs_iter_dependents_v2(zhp, 0, B_TRUE,
-		    destroy_check_dependent, &cb) != 0) {
-			rv = 1;
-			goto out;
-		}
-
-		if (cb.cb_error) {
-			rv = 1;
-			goto out;
-		}
-		cb.cb_batchedsnaps = fnvlist_alloc();
-		if (zfs_iter_dependents_v2(zhp, 0, B_FALSE, destroy_callback,
-		    &cb) != 0) {
-			rv = 1;
-			goto out;
-		}
-
-		/*
-		 * Do the real thing.  The callback will close the
-		 * handle regardless of whether it succeeds or not.
-		 */
-		err = destroy_callback(zhp, &cb);
-		zhp = NULL;
-		if (err == 0) {
-			err = zfs_destroy_snaps_nvl(g_zfs,
-			    cb.cb_batchedsnaps, cb.cb_defer_destroy);
-		}
-		if (err != 0 || cb.cb_error == B_TRUE)
-			rv = 1;
+	out:
+		fnvlist_free(cb.cb_batchedsnaps);
+		fnvlist_free(cb.cb_nvl);
+		if (zhp != NULL)
+			zfs_close(zhp);
+		return (rv);
 	}
-
-out:
-	fnvlist_free(cb.cb_batchedsnaps);
-	fnvlist_free(cb.cb_nvl);
-	if (zhp != NULL)
-		zfs_close(zhp);
-	return (rv);
 }
 
 static boolean_t
