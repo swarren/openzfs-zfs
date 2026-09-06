@@ -1715,40 +1715,37 @@ destroy_clones(destroy_cbdata_t *cb)
 static int
 zfs_do_destroy(int argc, char **argv)
 {
-	destroy_cbdata_t cb = { 0 };
-	int rv = 0;
-	int err = 0;
+	destroy_cbdata_t opts = { 0 };
 	int c;
-	zfs_handle_t *zhp = NULL;
-	char *at, *pound;
 	zfs_type_t type = ZFS_TYPE_DATASET;
+	int rv = 0;
 
 	/* check options */
 	while ((c = getopt(argc, argv, "vpndfrR")) != -1) {
 		switch (c) {
 		case 'v':
-			cb.cb_verbose = B_TRUE;
+			opts.cb_verbose = B_TRUE;
 			break;
 		case 'p':
-			cb.cb_verbose = B_TRUE;
-			cb.cb_parsable = B_TRUE;
+			opts.cb_verbose = B_TRUE;
+			opts.cb_parsable = B_TRUE;
 			break;
 		case 'n':
-			cb.cb_dryrun = B_TRUE;
+			opts.cb_dryrun = B_TRUE;
 			break;
 		case 'd':
-			cb.cb_defer_destroy = B_TRUE;
+			opts.cb_defer_destroy = B_TRUE;
 			type = ZFS_TYPE_SNAPSHOT;
 			break;
 		case 'f':
-			cb.cb_force = B_TRUE;
+			opts.cb_force = B_TRUE;
 			break;
 		case 'r':
-			cb.cb_recurse = B_TRUE;
+			opts.cb_recurse = B_TRUE;
 			break;
 		case 'R':
-			cb.cb_recurse = B_TRUE;
-			cb.cb_doclones = B_TRUE;
+			opts.cb_recurse = B_TRUE;
+			opts.cb_doclones = B_TRUE;
 			break;
 		case '?':
 		default:
@@ -1766,16 +1763,16 @@ zfs_do_destroy(int argc, char **argv)
 		(void) fprintf(stderr, gettext("missing dataset argument\n"));
 		usage(B_FALSE);
 	}
-	if (argc > 1) {
-		(void) fprintf(stderr, gettext("too many arguments\n"));
-		usage(B_FALSE);
-	}
 
-	{
+	while (argc) {
+		destroy_cbdata_t cb = opts;
+		int err = 0;
+		zfs_handle_t *zhp = NULL;
+		char *at, *pound;
+
 		at = strchr(argv[0], '@');
 		pound = strchr(argv[0], '#');
 		if (at != NULL) {
-
 			/* Build the list of snaps to destroy in cb_nvl. */
 			cb.cb_nvl = fnvlist_alloc();
 
@@ -1784,7 +1781,8 @@ zfs_do_destroy(int argc, char **argv)
 				ZFS_TYPE_FILESYSTEM | ZFS_TYPE_VOLUME);
 			if (zhp == NULL) {
 				nvlist_free(cb.cb_nvl);
-				return (1);
+				rv = 1;
+				goto out;
 			}
 
 			cb.cb_snapspec = at + 1;
@@ -1838,25 +1836,27 @@ zfs_do_destroy(int argc, char **argv)
 			if (err != 0)
 				rv = 1;
 		} else if (pound != NULL) {
-			int err;
 			nvlist_t *nvl;
 
 			if (cb.cb_dryrun) {
 				(void) fprintf(stderr,
 					"dryrun is not supported with bookmark\n");
-				return (-1);
+					rv = -1;
+					goto out;
 			}
 
 			if (cb.cb_defer_destroy) {
 				(void) fprintf(stderr,
 					"defer destroy is not supported with bookmark\n");
-				return (-1);
+				rv = -1;
+				goto out;
 			}
 
 			if (cb.cb_recurse) {
 				(void) fprintf(stderr,
 					"recursive is not supported with bookmark\n");
-				return (-1);
+				rv = -1;
+				goto out;
 			}
 
 			/*
@@ -1869,25 +1869,26 @@ zfs_do_destroy(int argc, char **argv)
 			if (!zfs_bookmark_exists(argv[0])) {
 				(void) fprintf(stderr, gettext("bookmark '%s' "
 					"does not exist.\n"), argv[0]);
-				return (1);
+				rv = 1;
+				goto out;
 			}
 
 			nvl = fnvlist_alloc();
 			fnvlist_add_boolean(nvl, argv[0]);
 
-			err = lzc_destroy_bookmarks(nvl, NULL);
-			if (err != 0) {
-				(void) zfs_standard_error(g_zfs, err,
+			rv = lzc_destroy_bookmarks(nvl, NULL);
+			if (rv != 0) {
+				(void) zfs_standard_error(g_zfs, rv,
 					"cannot destroy bookmark");
 			}
 
 			nvlist_free(nvl);
-
-			return (err);
 		} else {
 			/* Open the given dataset */
-			if ((zhp = zfs_open(g_zfs, argv[0], type)) == NULL)
-				return (1);
+			if ((zhp = zfs_open(g_zfs, argv[0], type)) == NULL) {
+				rv = 1;
+				goto out;
+			}
 
 			cb.cb_target = zhp;
 
@@ -1948,8 +1949,12 @@ zfs_do_destroy(int argc, char **argv)
 		fnvlist_free(cb.cb_nvl);
 		if (zhp != NULL)
 			zfs_close(zhp);
-		return (rv);
+		if (rv)
+			break;
+		argc--;
+		argv++;
 	}
+	return (rv);
 }
 
 static boolean_t
