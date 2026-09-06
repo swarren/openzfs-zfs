@@ -31,16 +31,22 @@
 .Nm zfs
 .Cm destroy
 .Op Fl Rfnprv
+.Po
 .Ar filesystem Ns | Ns Ar volume
+.Pc Ns …
 .Nm zfs
 .Cm destroy
 .Op Fl Rdnprv
+.Po
 .Ar filesystem Ns | Ns Ar volume Ns @ Ns Ar snap Ns
 .Oo % Ns Ar snap Oc Ns
 .Oo , Ns Ar snap Ns Oo % Ns Ar snap Oc Oc Ns …
+.Pc Ns …
 .Nm zfs
 .Cm destroy
+.Po
 .Ar filesystem Ns | Ns Ar volume Ns # Ns Ar bookmark
+.Pc Ns …
 .
 .Sh DESCRIPTION
 .Bl -tag -width ""
@@ -48,9 +54,11 @@
 .Nm zfs
 .Cm destroy
 .Op Fl Rfnprv
+.Po
 .Ar filesystem Ns | Ns Ar volume
+.Pc Ns …
 .Xc
-Destroys the given dataset.
+Destroys the given dataset(s).
 By default, the command unshares any file systems that are currently shared,
 unmounts any file systems that are currently mounted, and refuses to destroy a
 dataset that has active dependents
@@ -90,9 +98,11 @@ behavior for mounted file systems in use.
 .Nm zfs
 .Cm destroy
 .Op Fl Rdnprv
+.Po
 .Ar filesystem Ns | Ns Ar volume Ns @ Ns Ar snap Ns
 .Oo % Ns Ar snap Oc Ns
 .Oo , Ns Ar snap Ns Oo % Ns Ar snap Oc Oc Ns …
+.Pc Ns …
 .Xc
 Attempts to destroy the given snapshot(s).
 This will fail if any clones of the snapshot exist or if the snapshot is held.
@@ -105,6 +115,10 @@ option is applied, the command will instead mark the given snapshot for
 automatic destruction as soon as it becomes eligible.
 While marked for destruction, a snapshot remains visible, and the user may
 create new clones from it and place new holds on it.
+.Pp
+Multiple dataset, snapshot, or bookmark specs may be supplied to a single
+.Nm zfs Cm destroy
+command.
 .Pp
 The read-only snapshot properties
 .Sy defer_destroy
@@ -169,9 +183,11 @@ behavior for mounted file systems in use.
 .It Xo
 .Nm zfs
 .Cm destroy
+.Po
 .Ar filesystem Ns | Ns Ar volume Ns # Ns Ar bookmark
+.Pc Ns …
 .Xc
-The given bookmark is destroyed.
+Destroys the given bookmark(s).
 .El
 .
 .Sh EXAMPLES
