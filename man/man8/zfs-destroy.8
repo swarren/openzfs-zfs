@@ -36,7 +36,8 @@
 .Cm destroy
 .Op Fl Rdnprv
 .Ar filesystem Ns | Ns Ar volume Ns @ Ns Ar snap Ns
-.Oo % Ns Ar snap Ns Oo , Ns Ar snap Ns Oo % Ns Ar snap Oc Oc Oc Ns …
+.Oo % Ns Ar snap Oc Ns
+.Oo , Ns Ar snap Ns Oo % Ns Ar snap Oc Oc Ns …
 .Nm zfs
 .Cm destroy
 .Ar filesystem Ns | Ns Ar volume Ns # Ns Ar bookmark
@@ -90,7 +91,8 @@ behavior for mounted file systems in use.
 .Cm destroy
 .Op Fl Rdnprv
 .Ar filesystem Ns | Ns Ar volume Ns @ Ns Ar snap Ns
-.Oo % Ns Ar snap Ns Oo , Ns Ar snap Ns Oo % Ns Ar snap Oc Oc Oc Ns …
+.Oo % Ns Ar snap Oc Ns
+.Oo , Ns Ar snap Ns Oo % Ns Ar snap Oc Oc Ns …
 .Xc
 Attempts to destroy the given snapshot(s).
 This will fail if any clones of the snapshot exist or if the snapshot is held.
